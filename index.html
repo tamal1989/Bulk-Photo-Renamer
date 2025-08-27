@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Bulk Photo Renamer</title>
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+  <!-- JSZip for zipping renamed files -->
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+  <style>
+    :root {
+      --bg: #0b1220;
+      --panel: #0f172a; /* slate-900 */
+      --panel-2: #0b1324;
+      --text: #e6edf6;
+      --muted: #9fb0c3;
+      --accent: #6ee7ff; /* cyan-300 */
+      --accent-2: #a78bfa; /* violet-400 */
+      --danger: #ff6b6b;
+      --success: #22c55e;
+      --card: #101827;
+      --chip: #111b2e;
+      --shadow: 0 10px 30px rgba(0,0,0,.45), 0 2px 10px rgba(0,0,0,.3);
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+      background: radial-gradient(1200px 600px at 20% -10%, rgba(167,139,250,.25), transparent 60%),
+                  radial-gradient(1000px 500px at 110% 10%, rgba(110,231,255,.22), transparent 60%),
+                  linear-gradient(180deg, #070b14 0%, #0c1324 100%);
+      color: var(--text);
+    }
+    header {
+      position: sticky; top: 0; z-index: 10;
+      backdrop-filter: blur(8px);
+      background: linear-gradient(180deg, rgba(10,16,30,.9), rgba(10,16,30,.3));
+      border-bottom: 1px solid rgba(255,255,255,.06);
+    }
+    .container { max-width: 1100px; margin: 0 auto; padding: 28px 20px; }
+    .title {
+      display: flex; align-items: center; gap: 14px; margin: 8px 0 2px;
+      font-weight: 800; letter-spacing: .2px; font-size: clamp(20px, 4vw, 28px);
+    }
+    .subtitle { color: var(--muted); margin: 0 0 14px; }
+    .badge-row { display:flex; gap:10px; flex-wrap:wrap; }
+    .badge {
+      background: linear-gradient(145deg, var(--chip), #0b1426);
+      padding: 6px 10px; border-radius: 999px; font-size: 12px; color: #c6d6eb;
+      border: 1px solid rgba(255,255,255,.06);
+    }
+    main { padding: 26px 20px 60px; }
+
+    .panel {
+      background: linear-gradient(180deg, var(--panel), var(--panel-2));
+      border: 1px solid rgba(255,255,255,.08);
+      box-shadow: var(--shadow);
+      border-radius: 18px; padding: 18px; display: grid; gap: 18px;
+    }
+    .grid { display: grid; gap: 18px; grid-template-columns: 1.35fr .65fr; }
+    @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+
+    /* Uploader */
+    .dropzone {
+      border: 2px dashed rgba(255,255,255,.15);
+      border-radius: 16px; padding: 26px; text-align: center;
+      background: linear-gradient(180deg, #0a152b 0%, #0b1326 100%);
+      transition: border-color .2s, transform .2s, box-shadow .2s;
+      min-height: 180px; display:flex; align-items:center; justify-content:center; position:relative; overflow:hidden;
+    }
+    .dropzone:hover { border-color: rgba(110,231,255,.5); box-shadow: 0 0 0 4px rgba(110,231,255,.12); }
+    .dropzone.dragover { border-color: var(--accent); box-shadow: 0 0 0 6px rgba(110,231,255,.16), inset 0 0 50px rgba(167,139,250,.12); transform: translateY(-1px); }
+    .dropzone input[type=file] { display:none; }
+    .dz-cta { cursor:pointer; }
+    .dz-icon { width: 64px; height: 64px; margin: 0 auto 10px; opacity:.9; }
+
+    .controls { display:grid; grid-template-columns: repeat(2,1fr); gap:12px; }
+    @media (max-width: 520px) { .controls { grid-template-columns: 1fr; } }
+
+    .field { display:flex; flex-direction:column; gap:8px; }
+    label { font-size: 13px; color:#cfe2f8; }
+    input[type=number], input[type=text] {
+      background:#0a1428; border:1px solid rgba(255,255,255,.1); color:var(--text);
+      border-radius: 12px; padding: 12px 14px; font-size: 14px; outline:none;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.03);
+    }
+    input[type=number]:focus, input[type=text]:focus { border-color: rgba(110,231,255,.5); box-shadow: 0 0 0 4px rgba(110,231,255,.12); }
+
+    .btn-row { display:flex; gap:12px; flex-wrap:wrap; align-items:center; }
+    .btn {
+      border: 1px solid rgba(255,255,255,.12);
+      background: linear-gradient(135deg, #152545, #08162b);
+      color: var(--text); padding: 12px 16px; border-radius: 12px; cursor: pointer;
+      font-weight: 600; letter-spacing:.2px; transition: transform .12s, box-shadow .2s, background .2s;
+    }
+    .btn:hover { transform: translateY(-1px); box-shadow: 0 8px 20px rgba(0,0,0,.35); }
+    .btn.primary { background: linear-gradient(135deg, #4c55ff, #0bc5ea); border-color: rgba(255,255,255,.2); }
+    .btn.danger { background: linear-gradient(135deg, #2b1320, #2b0f14); border-color: rgba(255,255,255,.1); color:#ffd2d2; }
+    .btn:disabled { opacity:.6; cursor:not-allowed; }
+
+    .stats { display:flex; gap:14px; flex-wrap:wrap; color:#c9d8ec; font-size:13px; }
+
+    .progress { height: 10px; border-radius: 999px; background: rgba(255,255,255,.08); overflow:hidden; border:1px solid rgba(255,255,255,.1); }
+    .progress > div { height:100%; width:0%; background: linear-gradient(90deg, var(--accent), var(--accent-2)); transition: width .2s ease; }
+
+    /* Gallery */
+    .gallery { display:grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap:14px; }
+    .thumb { background: var(--card); border:1px solid rgba(255,255,255,.06); border-radius: 14px; overflow:hidden; position:relative; box-shadow: var(--shadow); }
+    .thumb img { width:100%; height:120px; object-fit:cover; display:block; filter: saturate(1.1) contrast(1.04); }
+    .thumb .cap { padding:10px 12px; font-size:12px; color:#d7e6fb; display:flex; align-items:center; justify-content:space-between; gap:8px; }
+    .chip { font-size: 10px; background: rgba(110,231,255,.12); border:1px solid rgba(110,231,255,.3); padding:4px 8px; border-radius:999px; color:#b7f3ff; }
+
+    /* Mini buttons inside thumbnails */
+    .mini { border:1px solid rgba(255,255,255,.14); background: linear-gradient(135deg, #1a2847, #0b1a33); color: var(--text); padding:6px 10px; border-radius:999px; cursor:pointer; font-weight:600; font-size:11px; }
+    .mini:hover { transform: translateY(-1px); box-shadow: 0 6px 14px rgba(0,0,0,.35); }
+
+    footer { opacity:.8; text-align:center; font-size:12px; padding: 30px 0 60px; color:#abc1de; }
+
+    .note { font-size:12px; color:#9fb0c3; }
+    .error { color: var(--danger); font-weight:600; }
+    .success { color: var(--success); font-weight:600; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="container">
+      <div class="title">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M3 7a2 2 0 0 1 2-2h6l2 2h6a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z" stroke="#a6c8ff" stroke-width="1.4"/>
+          <path d="M7 14h10M7 17h6" stroke="#6ee7ff" stroke-width="1.4" stroke-linecap="round"/>
+        </svg>
+        Bulk Photo Renamer
+      </div>
+      <p class="subtitle">Upload up to <strong>500 photos</strong> at once. Choose a starting number (e.g. 1000) and download a neatly zipped set renamed as 1000, 1001, 1002…</p>
+      <div class="badge-row">
+        <span class="badge">Client-side • No data leaves your browser</span>
+        <span class="badge">Drag & Drop</span>
+        <span class="badge">Zip Export</span>
+        <span class="badge">Separate Downloads</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="panel grid">
+      <!-- Left: Uploader & Gallery -->
+      <div>
+        <div id="dropzone" class="dropzone">
+          <label class="dz-cta">
+            <input id="fileInput" type="file" accept="image/*" multiple />
+            <div>
+              <svg class="dz-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12 16V8m0 0l-3 3m3-3l3 3" stroke="url(#g1)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+                <rect x="3" y="4" width="18" height="16" rx="3" stroke="url(#g2)" stroke-width="1.2"/>
+                <defs>
+                  <linearGradient id="g1" x1="12" y1="8" x2="12" y2="16" gradientUnits="userSpaceOnUse">
+                    <stop stop-color="#6ee7ff"/>
+                    <stop offset="1" stop-color="#a78bfa"/>
+                  </linearGradient>
+                  <linearGradient id="g2" x1="3" y1="4" x2="21" y2="20" gradientUnits="userSpaceOnUse">
+                    <stop stop-color="#a6c8ff"/>
+                    <stop offset="1" stop-color="#6ee7ff"/>
+                  </linearGradient>
+                </defs>
+              </svg>
+              <h3 style="margin:6px 0 6px">Drop photos here or click to select</h3>
+              <div class="note">JPG, PNG, WebP, HEIC/HEIF* • Max 500 files</div>
+              <div class="note" style="margin-top:6px">* HEIC/HEIF download is supported, but your browser may not preview it.</div>
+            </div>
+          </label>
+        </div>
+        <div style="margin-top:16px" class="stats">
+          <div>Selected: <strong id="count">0</strong> / 500</div>
+          <div id="sizeStat">Total size: <strong>0 MB</strong></div>
+          <div id="typeStat">Types: <strong>–</strong></div>
+        </div>
+        <div class="progress" style="margin-top:10px; display:none" id="progressWrap">
+          <div id="progressBar"></div>
+        </div>
+        <div id="error" class="error" style="margin-top:10px; display:none"></div>
+        <div id="success" class="success" style="margin-top:10px; display:none"></div>
+
+        <div id="gallery" class="gallery" style="margin-top:18px"></div>
+      </div>
+
+      <!-- Right: Controls -->
+      <div>
+        <div class="panel" style="padding:16px">
+          <div class="controls">
+            <div class="field">
+              <label for="startNum">Starting number</label>
+              <input id="startNum" type="number" inputmode="numeric" placeholder="e.g. 1000" value="501" min="0" />
+            </div>
+            <div class="field">
+              <label for="prefix">Optional prefix (before number)</label>
+              <input id="prefix" type="text" placeholder="Leave blank for only numbers" />
+            </div>
+            <div class="field">
+              <label for="suffix">Optional suffix (after number)</label>
+              <input id="suffix" type="text" placeholder="e.g. -Kolkata, _edit" />
+            </div>
+            <div class="field">
+              <label for="padding">Zero-pad width (optional)</label>
+              <input id="padding" type="number" min="0" value="0" />
+            </div>
+          </div>
+          <div class="btn-row" style="margin-top:12px">
+            <button id="renameBtn" class="btn primary">Rename & Download .zip</button>
+            <button id="downloadAllBtn" class="btn" title="Download each file separately">Download All Separately</button>
+            <button id="clearBtn" class="btn danger" title="Clear selection">Clear</button>
+          </div>
+          <p class="note" style="margin-top:8px">Tip: Set <em>Starting number</em> to 1000 to get 1000, 1001, 1002… The original file extensions are preserved.</p>
+        </div>
+
+        <div class="panel" style="padding:16px">
+          <h3 style="margin:6px 0 10px; font-size:16px">What you’ll get</h3>
+          <ul style="margin:0; padding-left:18px; color:#c6d8f1; line-height:1.6">
+            <li>A single <strong>.zip</strong> containing all your photos renamed in order.</li>
+            <li>Or click <strong>Download All Separately</strong> (or the small <em>Download</em> button on any thumbnail) to save files one-by-one with the new names.</li>
+            <li>Filenames look like: <code><span id="exPrefix"></span><span id="exNum">501</span><span id="exSuffix"></span>.jpg</code></li>
+            <li>Preview thumbnails show the new names before you download.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <footer>
+      Built for creators who batch upload to stock sites, e-commerce, and social media. 100% local.
+    </footer>
+  </main>
+
+  <script>
+    const MAX_FILES = 500;
+    const dropzone = document.getElementById('dropzone');
+    const fileInput = document.getElementById('fileInput');
+    const startNumEl = document.getElementById('startNum');
+    const prefixEl = document.getElementById('prefix');
+    const suffixEl = document.getElementById('suffix');
+    const paddingEl = document.getElementById('padding');
+    const renameBtn = document.getElementById('renameBtn');
+    const clearBtn = document.getElementById('clearBtn');
+    const downloadAllBtn = document.getElementById('downloadAllBtn');
+
+    const countEl = document.getElementById('count');
+    const sizeStat = document.getElementById('sizeStat');
+    const typeStat = document.getElementById('typeStat');
+    const errorEl = document.getElementById('error');
+    const successEl = document.getElementById('success');
+
+    const gallery = document.getElementById('gallery');
+    const progressWrap = document.getElementById('progressWrap');
+    const progressBar = document.getElementById('progressBar');
+
+    const exPrefix = document.getElementById('exPrefix');
+    const exNum = document.getElementById('exNum');
+    const exSuffix = document.getElementById('exSuffix');
+
+    let files = [];
+
+    function resetUI() {
+      gallery.innerHTML = '';
+      updateStats();
+      errorEl.style.display = 'none';
+      successEl.style.display = 'none';
+      progressWrap.style.display = 'none';
+      progressBar.style.width = '0%';
+    }
+
+    function showError(msg) {
+      errorEl.textContent = msg;
+      errorEl.style.display = 'block';
+      successEl.style.display = 'none';
+    }
+
+    function showSuccess(msg) {
+      successEl.textContent = msg;
+      successEl.style.display = 'block';
+      errorEl.style.display = 'none';
+    }
+
+    function updateExample() {
+      exPrefix.textContent = prefixEl.value || '';
+      exSuffix.textContent = suffixEl.value || '';
+      exNum.textContent = startNumEl.value || '0';
+    }
+
+    function prettyBytes(bytes) {
+      const units = ['B','KB','MB','GB'];
+      let i = 0; let n = bytes;
+      while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
+      return `${n.toFixed(n >= 10 || i === 0 ? 0 : 1)} ${units[i]}`;
+    }
+
+    function updateStats() {
+      countEl.textContent = files.length;
+      const totalBytes = files.reduce((sum, f) => sum + (f.size || 0), 0);
+      sizeStat.innerHTML = `Total size: <strong>${prettyBytes(totalBytes)}</strong>`;
+      const types = [...new Set(files.map(f => (f.type || 'unknown').split(';')[0]))];
+      typeStat.innerHTML = `Types: <strong>${types.slice(0,3).join(', ') || '–'}${types.length>3 ? ', …' : ''}</strong>`;
+    }
+
+    function isImageFile(file) {
+      return file.type.startsWith('image/') || /\.(jpe?g|png|gif|webp|heic|heif|tiff?|bmp)$/i.test(file.name);
+    }
+
+    function handleFiles(selected) {
+      const arr = Array.from(selected).filter(isImageFile);
+      if (arr.length + files.length > MAX_FILES) {
+        showError(`Please select at most ${MAX_FILES} photos. You already have ${files.length}.`);
+        return;
+      }
+      files = files.concat(arr);
+      updateStats();
+      renderGallery();
+    }
+
+    function renderGallery() {
+      gallery.innerHTML = '';
+      const start = parseInt(startNumEl.value || '0', 10);
+      const pad = Math.max(0, parseInt(paddingEl.value || '0', 10));
+      const pre = prefixEl.value || '';
+      const suf = suffixEl.value || '';
+
+      files.forEach((file, idx) => {
+        const num = (start + idx).toString().padStart(pad, '0');
+        const ext = (file.name.split('.').pop() || '').toLowerCase();
+        const newName = `${pre}${num}${suf}${ext ? '.'+ext : ''}`;
+
+        const wrap = document.createElement('div');
+        wrap.className = 'thumb';
+
+        const img = document.createElement('img');
+        if (file.type.startsWith('image/') && file.type !== 'image/heic' && file.type !== 'image/heif') {
+          img.src = URL.createObjectURL(file);
+        } else {
+          const svg = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(`
+            <svg xmlns='http://www.w3.org/2000/svg' width='400' height='300'>
+              <rect width='100%' height='100%' fill='#0c1528'/>
+              <text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' fill='#a6c8ff' font-family='Inter' font-size='20'>${ext.toUpperCase() || 'FILE'}</text>
+            </svg>`)}
+          `;
+          img.src = svg;
+        }
+        wrap.appendChild(img);
+
+        const cap = document.createElement('div');
+        cap.className = 'cap';
+        cap.innerHTML = `<span title="${newName}">${newName}</span><span class="chip">${prettyBytes(file.size)}</span>`;
+        const dlBtn = document.createElement('button');
+        dlBtn.className = 'mini dl-one';
+        dlBtn.dataset.idx = String(idx);
+        dlBtn.textContent = 'Download';
+        cap.appendChild(dlBtn);
+        wrap.appendChild(cap);
+
+        gallery.appendChild(wrap);
+      });
+    }
+
+    // Drag & Drop handlers
+    dropzone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      dropzone.classList.add('dragover');
+    });
+    dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
+    dropzone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropzone.classList.remove('dragover');
+      handleFiles(e.dataTransfer.files);
+    });
+
+    dropzone.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
+
+    // Update example & gallery when settings change
+    [startNumEl, prefixEl, suffixEl, paddingEl].forEach(el => el.addEventListener('input', () => {
+      updateExample();
+      renderGallery();
+    }));
+
+    clearBtn.addEventListener('click', () => {
+      files = [];
+      fileInput.value = '';
+      resetUI();
+    });
+
+    function computeNameForIndex(i) {
+      const start = parseInt(startNumEl.value || '0', 10);
+      const pad = Math.max(0, parseInt(paddingEl.value || '0', 10));
+      const pre = prefixEl.value || '';
+      const suf = suffixEl.value || '';
+      const f = files[i];
+      const num = (start + i).toString().padStart(pad, '0');
+      const ext = (f.name.split('.').pop() || '').toLowerCase();
+      return `${pre}${num}${suf}${ext ? '.'+ext : ''}`;
+    }
+
+    async function renameAndZip() {
+      if (!files.length) { showError('Please add some photos first.'); return; }
+      const start = parseInt(startNumEl.value || '0', 10);
+      if (Number.isNaN(start) || start < 0) { showError('Starting number must be 0 or more.'); return; }
+
+      if (typeof JSZip === 'undefined') {
+        showError('Zip feature failed to load. Please check your internet connection or try again. You can still download files individually.');
+        return;
+      }
+
+      const pre = prefixEl.value || '';
+      const suf = suffixEl.value || '';
+      const pad = Math.max(0, parseInt(paddingEl.value || '0', 10));
+
+      errorEl.style.display = 'none';
+      successEl.style.display = 'none';
+      progressWrap.style.display = 'block';
+      progressBar.style.width = '0%';
+      renameBtn.disabled = true;
+
+      try {
+        const zip = new JSZip();
+        const folder = zip.folder('renamed');
+
+        for (let i = 0; i < files.length; i++) {
+          const f = files[i];
+          const num = (start + i).toString().padStart(pad, '0');
+          const ext = (f.name.split('.').pop() || '').toLowerCase();
+          const newName = `${pre}${num}${suf}${ext ? '.'+ext : ''}`;
+          const data = await f.arrayBuffer();
+          folder.file(newName, data);
+          progressBar.style.width = `${Math.round(((i+1)/files.length)*100)}%`;
+        }
+
+        const blob = await zip.generateAsync({ type: 'blob' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        const zipNameBase = `${pre || ''}${start}${suf || ''}`.replace(/[^a-zA-Z0-9_-]+/g,'') || 'renamed';
+        a.href = url; a.download = `${zipNameBase}_photos.zip`;
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 2000);
+
+        showSuccess('Your zip is ready and downloading.');
+      } catch (err) {
+        console.error(err);
+        showError('Could not create zip. Try again, or use "Download All Separately".');
+      } finally {
+        renameBtn.disabled = false;
+      }
+    }
+
+    async function downloadOneByIndex(i) {
+      const f = files[i];
+      const newName = computeNameForIndex(i);
+      const url = URL.createObjectURL(f);
+      const a = document.createElement('a');
+      a.href = url; a.download = newName;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+
+    async function downloadAllSeparately() {
+      if (!files.length) { showError('Please add some photos first.'); return; }
+      errorEl.style.display = 'none';
+      successEl.style.display = 'none';
+      progressWrap.style.display = 'block';
+      progressBar.style.width = '0%';
+      downloadAllBtn.disabled = true;
+      renameBtn.disabled = true;
+
+      for (let i = 0; i < files.length; i++) {
+        await downloadOneByIndex(i);
+        progressBar.style.width = `${Math.round(((i+1)/files.length)*100)}%`;
+        await new Promise(r => setTimeout(r, 120));
+      }
+
+      downloadAllBtn.disabled = false;
+      renameBtn.disabled = false;
+      showSuccess('Triggered separate downloads for each photo (your browser may ask to allow multiple downloads).');
+    }
+
+    renameBtn.addEventListener('click', renameAndZip);
+    downloadAllBtn.addEventListener('click', downloadAllSeparately);
+
+    // Per-item download via the gallery button
+    gallery.addEventListener('click', (e) => {
+      const btn = e.target.closest('.dl-one');
+      if (!btn) return;
+      const idx = parseInt(btn.dataset.idx || '0', 10);
+      if (!Number.isNaN(idx)) downloadOneByIndex(idx);
+    });
+
+    // Init
+    updateExample();
+    resetUI();
+  </script>
+</body>
+</html>
